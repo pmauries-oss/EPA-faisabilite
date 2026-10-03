@@ -227,6 +227,7 @@ const plan=L.tileLayer(IGN('GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2','image/png'),{max
 const ortho=L.tileLayer(IGN('ORTHOIMAGERY.ORTHOPHOTOS','image/jpeg'),{maxZoom:20,maxNativeZoom:19,attribution:'© IGN'});
 const map=L.map('map',{zoomControl:true}).setView([45.35,5.15],15);plan.addTo(map);
 let photo=false;$('layerBtn').onclick=()=>{photo=!photo;if(photo){map.removeLayer(plan);ortho.addTo(map);$('layerBtn').textContent='🗺️ Plan'}else{map.removeLayer(ortho);plan.addTo(map);$('layerBtn').textContent='🛰️ Photo'}};
+  L.control.layers({'🗺️ Plan':plan,'🛰️ Satellite':ortho},null,{collapsed:false}).addTo(map);map.on('baselayerchange',e=>{photo=e.layer===ortho;$('layerBtn').textContent=photo?'🗺️ Plan':'🛰️ Photo'});
 
 const icon=(t,c)=>L.divIcon({className:'',html:`<div style="font-size:26px;line-height:26px;filter:drop-shadow(0 1px 2px #000a)">${t}</div>`,iconSize:[26,26],iconAnchor:[13,13]});
 let mLadder=null,mTarget=null,mObst=null,line=null,circle=null,accCircle=null,bldLayer=null;
