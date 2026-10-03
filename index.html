@@ -50,7 +50,7 @@ td,th{border-bottom:1px solid var(--line);padding:4px;text-align:center}
 </head>
 <body>
 <header>
-  <div><h1>Faisabilité dressage EPA</h1><small>EP L32A-XS Vienne — diagramme de portée</small></div>
+  <div><h1>Faisabilité dressage EPA</h1><small>EP L32A-XS Seyssinet — diagramme de portée</small></div>
   <button id="btnGps" class="primary">📍 Me localiser</button>
 </header>
 <main>
@@ -433,11 +433,11 @@ function onOri(e){if(e.beta==null) return;
   vz.buf.push(e.beta-90);if(vz.buf.length>12) vz.buf.shift();
   const a=curAngle();$('vzAng').textContent=`Angle : ${a>=0?'+':''}${a.toFixed(1)}°`}
 async function openVisee(obs){
-  vz={stream:null,buf:[],foot:null,top:null,obs:obs||null,photo:null,h:null};
+  vz={stream:null,buf:[],foot:null,top:null,obs:obs||null,photo:null,h:null,dAuto:false,dMsg:''};
   $('vzType').value=obs?obs.t:$('oType').value;
   $('vzD').value=obs&&!isNaN(obs.x)?obs.x.toFixed(1):($('oDist').value||'');
   $('vzRes').textContent='';$('vzOk').disabled=true;$('vzFoot').textContent='1 · Viser le pied';$('vzTop').textContent='2 · Viser le sommet';
-  $('vzMsg').textContent='Tenez le téléphone verticalement. Indiquez votre distance horizontale à l\'obstacle, visez le pied puis le sommet (ou le câble).';
+  $('vzMsg').textContent='Tenez le téléphone verticalement. Visez le pied (la distance est alors estimée si vous la laissez vide), puis le sommet ou le câble.';
   $('vz').style.display='block';
   try{ if(typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission){const r=await DeviceOrientationEvent.requestPermission();if(r!=='granted') throw new Error('inclinaison refusée')}
     window.addEventListener('deviceorientation',onOri);
@@ -454,11 +454,16 @@ function vzCalc(){
   const r=x=>Math.tan(x*Math.PI/180);
   return vz.foot!=null? d*(r(vz.top)-r(vz.foot)) : P.eyeH+d*r(vz.top);
 }
-$('vzFoot').onclick=()=>{const a=curAngle();if(a==null){$('vzMsg').textContent='Pas de mesure d\'angle.';return}vz.foot=a;$('vzFoot').textContent=`1 · Pied ${a.toFixed(1)}° ✓`;upd()};
+$('vzFoot').onclick=()=>{const a=curAngle();if(a==null){$('vzMsg').textContent='Pas de mesure d\'angle.';return}vz.foot=a;$('vzFoot').textContent=`1 · Pied ${a.toFixed(1)}° ✓`;
+  // distance déduite de l'angle au pied (hauteur des yeux connue, sol plat)
+  if(a<-1&&($('vzD').value===''||vz.dAuto)){const d=P.eyeH/Math.tan(-a*Math.PI/180);vz.dAuto=true;$('vzD').value=d.toFixed(1);
+    const err=P.eyeH/Math.tan(-(a-1)*Math.PI/180);vz.dMsg=`Distance estimée par visée du pied : ${d.toFixed(1)} m (± ${Math.abs(d-err).toFixed(1)} m par degré d'erreur${d>15?' — au-delà de 15 m, préférez la distance mesurée sur la carte':''}).`}
+  else if(a>=-1&&$('vzD').value==='') vz.dMsg='Pied trop proche de l\'horizontale : distance impossible à déduire, saisissez-la.';
+  $('vzMsg').textContent=vz.dMsg||'';upd()};
 $('vzTop').onclick=()=>{const a=curAngle();if(a==null){$('vzMsg').textContent='Pas de mesure d\'angle.';return}vz.top=a;$('vzTop').textContent=`2 · Sommet ${a.toFixed(1)}° ✓`;snap();upd()};
-$('vzD').oninput=upd;
+$('vzD').oninput=()=>{vz.dAuto=false;vz.dMsg='';upd()};
 function upd(){const h=vzCalc();if(h==null) return;vz.h=h;$('vzRes').textContent=`Hauteur ≈ ${h.toFixed(1)} m`;$('vzOk').disabled=false;
-  $('vzMsg').textContent=vz.foot==null?`Calcul avec yeux à ${P.eyeH} m (sol supposé plat). Visez aussi le pied pour plus de précision.`:'Mesure pied + sommet : indépendante de la hauteur des yeux.'}
+  $('vzMsg').textContent=(vz.dMsg?vz.dMsg+' ':'')+(vz.foot==null?`Calcul avec yeux à ${P.eyeH} m (sol supposé plat). Visez aussi le pied pour plus de précision.`:vz.dAuto?'':'Mesure pied + sommet : indépendante de la hauteur des yeux.')}
 function snap(){const v=$('vzVid');if(!v.videoWidth) {vz.photo=null;return}
   const w=640,h=Math.round(v.videoHeight*w/v.videoWidth),c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');
   g.drawImage(v,0,0,w,h);vz.snapCanvas=c}
