@@ -105,19 +105,20 @@ td,th{border-bottom:1px solid var(--line);padding:4px;text-align:center}
     </label>
     <label>Vent (km/h)<input id="vent" type="number" min="0" step="5" value="0"></label>
   </div>
-  <div class="grid" style="margin-top:8px">
-    <label>Obstacle : type
-      <select id="oType">
-        <option value="1">Arbre / bâti / mobilier (garde 1 m)</option>
-        <option value="1e">Ligne BT 230-400 V (1 m)</option>
-        <option value="3e">Ligne HTA 20 kV (3 m)</option>
-        <option value="5e">Ligne HTB ≥ 63 kV (5 m)</option>
-        <option value="3t">Caténaire tram / SNCF (3 m)</option>
-      </select>
+  <h3 style="font-size:14px;margin:14px 0 6px">Obstacles</h3>
+  <div class="grid">
+    <label>Type
+      <select id="oType"></select>
     </label>
-    <label>Obstacle : distance / axe (m)<input id="oDist" type="number" step="0.1" placeholder="aucun"></label>
-    <label>Obstacle : hauteur / sol échelle (m)<input id="oH" type="number" step="0.1" placeholder="aucun"></label>
+    <label>Distance / axe tourelle (m)<input id="oDist" type="number" step="0.1"></label>
+    <label>Hauteur / sol échelle (m)<input id="oH" type="number" step="0.1" placeholder="à mesurer"></label>
   </div>
+  <div class="row" style="margin-top:8px">
+    <button id="oAdd">+ Ajouter</button>
+    <button id="oVisee" class="primary">📷 Mesurer par visée</button>
+  </div>
+  <div id="oList" style="margin-top:8px"></div>
+  <p class="hint" id="lineInfo">Les lignes électriques connues (IGN, Enedis) s'affichent sur la carte dès que l'échelle est placée.</p>
   <p class="hint">Champs pré-remplis automatiquement (GPS + IGN), modifiables : une valeur saisie à la main prime.</p>
 </section>
 
@@ -143,6 +144,7 @@ td,th{border-bottom:1px solid var(--line);padding:4px;text-align:center}
     <summary>⚙️ Paramètres</summary>
     <div class="grid" style="margin-top:8px">
       <label>Marge d'approche nacelle (m)<input data-p="marge" type="number" step="0.1"></label>
+      <label>Visée : hauteur des yeux (m)<input data-p="eyeH" type="number" step="0.05"></label>
       <label>Hauteur d'étage (m)<input data-p="hEt" type="number" step="0.1"></label>
       <label>Articulé : demi-largeur véhicule (m)<input data-p="offArt" type="number" step="0.05"></label>
       <label>Dévers : correction auto (°)<input data-p="dev1" type="number" step="0.5"></label>
@@ -161,10 +163,34 @@ td,th{border-bottom:1px solid var(--line);padding:4px;text-align:center}
 <p class="hint" style="text-align:center">Aide à la décision uniquement — le chef d'agrès et le conducteur EPA restent seuls juges du dressage (portance du sol, lignes électriques, vent, affichage de charge du pupitre). Données : IGN Géoplateforme (Plan IGN, BD ORTHO, BD TOPO, RGE ALTI).</p>
 </main>
 
+<div id="vz" style="display:none;position:fixed;inset:0;z-index:5000;background:#000;color:#fff">
+  <video id="vzVid" playsinline muted autoplay style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>
+  <div style="position:absolute;left:50%;top:42%;width:64px;height:64px;transform:translate(-50%,-50%);pointer-events:none">
+    <div style="position:absolute;left:31px;top:0;width:2px;height:64px;background:#ff3b3b"></div>
+    <div style="position:absolute;top:31px;left:0;height:2px;width:64px;background:#ff3b3b"></div>
+    <div style="position:absolute;inset:18px;border:2px solid #ff3b3b;border-radius:50%"></div>
+  </div>
+  <div style="position:absolute;top:0;left:0;right:0;padding:12px 16px;background:#000a;font-weight:700;display:flex;justify-content:space-between;gap:8px">
+    <span id="vzAng">Angle : —</span><span id="vzRes"></span><button id="vzClose" style="padding:4px 10px">✕</button>
+  </div>
+  <div style="position:absolute;bottom:0;left:0;right:0;padding:10px 12px 18px;background:#000c;display:grid;gap:8px">
+    <div id="vzMsg" style="font-size:14px">Tenez le téléphone verticalement, placez-vous à l'axe de la tourelle (ou indiquez votre distance à l'obstacle).</div>
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <label style="color:#ccc">Type<select id="vzType"></select></label>
+      <label style="color:#ccc">Ma distance à l'obstacle (m)<input id="vzD" type="number" step="0.1"></label>
+    </div>
+    <div class="row">
+      <button id="vzFoot">1 · Viser le pied</button>
+      <button id="vzTop" class="primary">2 · Viser le sommet</button>
+      <button id="vzOk" disabled>✔ Valider</button>
+    </div>
+  </div>
+</div>
+<div id="phView" style="display:none;position:fixed;inset:0;z-index:5001;background:#000d" onclick="this.style.display='none'"><img id="phImg" style="max-width:100%;max-height:100%;position:absolute;inset:0;margin:auto"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 // ---------- Paramètres ----------
-const DEF={v:4,marge:0.5,hEt:3,allege:0,offArt:1.25,dev1:7,dev2:10,dev3:14,lAng:70,lLen:28,
+const DEF={v:5,eyeH:1.5,marge:0.5,hEt:3,allege:0,offArt:1.25,dev1:7,dev2:10,dev3:14,lAng:70,lLen:28,
   hp:2.9,Lmin:4,Lmax:26.5,la:4.3,bmax:75,phiMin:40,tmin:-17,tmax:75};
 let P; try{P=JSON.parse(localStorage.getItem('epaParams'))}catch(e){}
 if(!P||P.v!==DEF.v) P=JSON.parse(JSON.stringify(DEF));
@@ -240,7 +266,7 @@ Object.entries(modes).forEach(([k,b])=>b.onclick=()=>{mode=k;Object.values(modes
 
 const S={ladder:null,target:null,obst:null,zL:null,zT:null,dev:null,bld:null,auto:{}};
 
-map.on('click',e=>{if(mode==='ladder')setLadder(e.latlng);else if(mode==='target')setTarget(e.latlng);else setObst(e.latlng)});
+map.on('click',e=>{if(mode==='ladder')setLadder(e.latlng);else if(mode==='target')setTarget(e.latlng);else addObstAt(e.latlng)});
 
 function setLadder(ll,acc){
   S.ladder=ll;
@@ -248,7 +274,7 @@ function setLadder(ll,acc){
   else mLadder.setLatLng(ll);
   if(accCircle){map.removeLayer(accCircle);accCircle=null}
   if(acc) accCircle=L.circle(ll,{radius:acc,color:'#1f6feb',weight:1,fillOpacity:.08}).addTo(map);
-  drawReach();terrainLadder();geom();
+  drawReach();terrainLadder();geom();loadLines();
   if(mode==='ladder'){mode='target';Object.values(modes).forEach(x=>x.classList.remove('on'));modes.target.classList.add('on')}
 }
 function setTarget(ll){
@@ -257,12 +283,7 @@ function setTarget(ll){
   else mTarget.setLatLng(ll);
   clearProp();terrainTarget();building(ll);geom();
 }
-function setObst(ll){
-  S.obst=ll;
-  if(!mObst){mObst=L.marker(ll,{icon:icon('🌳'),draggable:true}).addTo(map);mObst.on('dragend',()=>setObst(mObst.getLatLng()))}
-  else mObst.setLatLng(ll);
-  geom();
-}
+function setObst(){}
 function drawReach(){}
 
 // ---------- GPS ----------
@@ -340,16 +361,16 @@ function geom(){
     setAuto('dist',(map.distance(S.ladder,S.target)+P.marge).toFixed(1));
     if(line) map.removeLayer(line);line=L.polyline([S.ladder,S.target],{color:'#c8102e',weight:3}).addTo(map);
   }
-  if(S.ladder&&S.obst) setAuto('oDist',map.distance(S.ladder,S.obst).toFixed(1));
+  obstFromMap();linesCheck();
   compute();
 }
 // champ auto : rempli tant que l'utilisateur ne l'a pas modifié à la main
 const manual={};
-['hCible','dist','deniv','oDist','oH'].forEach(id=>$(id).addEventListener('input',()=>{manual[id]=true;compute()}));
+['hCible','dist','deniv'].forEach(id=>$(id).addEventListener('input',()=>{manual[id]=true;compute()}));
 function setAuto(id,v){if(!manual[id]){$(id).value=v}}
 $('cibleType').onchange=()=>{manual.hCible=false;autoHeight();compute()};
 $('etage').oninput=()=>{manual.hCible=false;autoHeight();compute()};
-['charge','mission','oType'].forEach(id=>$(id).onchange=compute);$('vent').oninput=compute;
+['charge','mission'].forEach(id=>$(id).onchange=compute);$('vent').oninput=compute;
 const devDeg=()=>S.dev==null?null:Math.atan(S.dev/100)*180/Math.PI;
 
 function showTerrain(){
@@ -364,6 +385,140 @@ function showTerrain(){
    ${S.bld&&S.bld.usage?`<div><span>Usage</span><b style="font-size:14px">${S.bld.usage}</b></div>`:''}`;
 }
 
+
+// ---------- Obstacles ----------
+const OT={arbre:{n:'Arbre',e:'🌳',g:1},bati:{n:'Bâti / mobilier',e:'🏠',g:1},vehicule:{n:'Véhicule',e:'🚗',g:1},
+  BT:{n:'Ligne BT',e:'⚡',g:1,el:1},HTA:{n:'Ligne HTA',e:'⚡',g:3,el:1},HTB:{n:'Ligne HTB',e:'⚡',g:5,el:1},cat:{n:'Caténaire tram/SNCF',e:'🚋',g:3,el:1}};
+const OBS=[];let obsSeq=0;
+['oType','vzType'].forEach(id=>Object.entries(OT).forEach(([k,v])=>$(id).add(new Option(`${v.e} ${v.n} (garde ${v.g} m)`,k))));
+function projX(ll){ // distance depuis l'axe, projetée sur l'axe échelle→cible
+  if(!S.ladder) return NaN;
+  if(!S.target) return map.distance(S.ladder,ll);
+  const c=map.options.crs,a=c.project(S.ladder),b=c.project(S.target),p=c.project(ll);
+  const ux=b.x-a.x,uy=b.y-a.y,n=Math.hypot(ux,uy);if(n<1e-6) return map.distance(S.ladder,ll);
+  const k=map.distance(S.ladder,S.target)/n;
+  return Math.max(0,((p.x-a.x)*ux+(p.y-a.y)*uy)/n*k);
+}
+function addObst(o){o.id=++obsSeq;OBS.push(o);
+  if(o.ll){o.m=L.marker(o.ll,{icon:icon(OT[o.t].e),draggable:true}).addTo(map);o.m.on('dragend',()=>{o.ll=o.m.getLatLng();o.x=projX(o.ll);renderObs();compute()})}
+  renderObs();compute();return o}
+function addObstAt(ll){const h=parseFloat($('oH').value);addObst({t:$('oType').value,ll,x:projX(ll),h:isNaN(h)?null:h,src:'carte'})}
+function obstFromMap(){OBS.forEach(o=>{if(o.ll) o.x=projX(o.ll)});renderObs()}
+$('oAdd').onclick=()=>{const x=parseFloat($('oDist').value),h=parseFloat($('oH').value);
+  if(isNaN(x)){alertMsg('Indiquez la distance de l\'obstacle, ou utilisez ⚡ Placer un obstacle sur la carte.');return}
+  addObst({t:$('oType').value,x,h:isNaN(h)?null:h,src:'saisie'});$('oDist').value='';$('oH').value=''};
+function alertMsg(t){$('lineInfo').textContent=t}
+function delObst(id){const i=OBS.findIndex(o=>o.id===id);if(i<0)return;if(OBS[i].m)map.removeLayer(OBS[i].m);OBS.splice(i,1);renderObs();compute()}
+function renderObs(){
+  if(!OBS.length){$('oList').innerHTML='<p class="hint">Aucun obstacle. Touchez « ⚡ Placer un obstacle » puis la carte, ou mesurez par visée.</p>';return}
+  let h='<table><tr><th style="text-align:left">Obstacle</th><th>Dist.</th><th>Haut.</th><th></th><th></th></tr>';
+  OBS.forEach(o=>{h+=`<tr><td style="text-align:left">${OT[o.t].e} ${OT[o.t].n}${o.src==='auto'?' <small>(auto)</small>':''}</td>
+   <td>${isNaN(o.x)?'—':o.x.toFixed(1)+' m'}</td>
+   <td><input data-h="${o.id}" type="number" step="0.1" value="${o.h??''}" placeholder="?" style="width:64px;padding:3px"></td>
+   <td>${o.photo?`<img data-ph="${o.id}" src="${o.photo}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;cursor:pointer">`:`<button data-vz="${o.id}" style="padding:4px 8px">📷</button>`}</td>
+   <td><button data-del="${o.id}" style="padding:4px 8px">✕</button></td></tr>`});
+  $('oList').innerHTML=h+'</table>';
+  $('oList').querySelectorAll('[data-h]').forEach(i=>i.onchange=()=>{const o=OBS.find(x=>x.id==i.dataset.h);const v=parseFloat(i.value);o.h=isNaN(v)?null:v;compute()});
+  $('oList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delObst(+b.dataset.del));
+  $('oList').querySelectorAll('[data-vz]').forEach(b=>b.onclick=()=>openVisee(OBS.find(x=>x.id==b.dataset.vz)));
+  $('oList').querySelectorAll('[data-ph]').forEach(im=>im.onclick=()=>{$('phImg').src=im.src;$('phView').style.display='block'});
+}
+
+// ---------- Visée photo (clinomètre) ----------
+let vz={stream:null,buf:[],foot:null,top:null,obs:null,photo:null,h:null};
+function curAngle(){if(!vz.buf.length) return null;return vz.buf.reduce((a,b)=>a+b,0)/vz.buf.length}
+function onOri(e){if(e.beta==null) return;
+  const portrait=!screen.orientation||Math.abs(screen.orientation.angle||0)%180===0;
+  if(!portrait){$('vzAng').textContent='Passez en mode portrait';return}
+  vz.buf.push(e.beta-90);if(vz.buf.length>12) vz.buf.shift();
+  const a=curAngle();$('vzAng').textContent=`Angle : ${a>=0?'+':''}${a.toFixed(1)}°`}
+async function openVisee(obs){
+  vz={stream:null,buf:[],foot:null,top:null,obs:obs||null,photo:null,h:null};
+  $('vzType').value=obs?obs.t:$('oType').value;
+  $('vzD').value=obs&&!isNaN(obs.x)?obs.x.toFixed(1):($('oDist').value||'');
+  $('vzRes').textContent='';$('vzOk').disabled=true;$('vzFoot').textContent='1 · Viser le pied';$('vzTop').textContent='2 · Viser le sommet';
+  $('vzMsg').textContent='Tenez le téléphone verticalement. Indiquez votre distance horizontale à l\'obstacle, visez le pied puis le sommet (ou le câble).';
+  $('vz').style.display='block';
+  try{ if(typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission){const r=await DeviceOrientationEvent.requestPermission();if(r!=='granted') throw new Error('inclinaison refusée')}
+    window.addEventListener('deviceorientation',onOri);
+  }catch(e){$('vzMsg').textContent='Capteur d\'inclinaison indisponible ('+e.message+'). Autorisez « Mouvement et orientation » dans Safari.'}
+  try{vz.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});$('vzVid').srcObject=vz.stream}
+  catch(e){$('vzMsg').textContent='Caméra indisponible ('+e.message+'). La mesure d\'angle reste possible en visant à travers le bord du téléphone.'}
+}
+function closeVisee(){window.removeEventListener('deviceorientation',onOri);if(vz.stream) vz.stream.getTracks().forEach(t=>t.stop());$('vz').style.display='none'}
+$('vzClose').onclick=closeVisee;
+$('oVisee').onclick=()=>openVisee(null);
+function vzCalc(){
+  const d=parseFloat($('vzD').value);if(isNaN(d)||d<=0){$('vzMsg').textContent='Indiquez votre distance horizontale à l\'obstacle (m).';return null}
+  if(vz.top==null) return null;
+  const r=x=>Math.tan(x*Math.PI/180);
+  return vz.foot!=null? d*(r(vz.top)-r(vz.foot)) : P.eyeH+d*r(vz.top);
+}
+$('vzFoot').onclick=()=>{const a=curAngle();if(a==null){$('vzMsg').textContent='Pas de mesure d\'angle.';return}vz.foot=a;$('vzFoot').textContent=`1 · Pied ${a.toFixed(1)}° ✓`;upd()};
+$('vzTop').onclick=()=>{const a=curAngle();if(a==null){$('vzMsg').textContent='Pas de mesure d\'angle.';return}vz.top=a;$('vzTop').textContent=`2 · Sommet ${a.toFixed(1)}° ✓`;snap();upd()};
+$('vzD').oninput=upd;
+function upd(){const h=vzCalc();if(h==null) return;vz.h=h;$('vzRes').textContent=`Hauteur ≈ ${h.toFixed(1)} m`;$('vzOk').disabled=false;
+  $('vzMsg').textContent=vz.foot==null?`Calcul avec yeux à ${P.eyeH} m (sol supposé plat). Visez aussi le pied pour plus de précision.`:'Mesure pied + sommet : indépendante de la hauteur des yeux.'}
+function snap(){const v=$('vzVid');if(!v.videoWidth) {vz.photo=null;return}
+  const w=640,h=Math.round(v.videoHeight*w/v.videoWidth),c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d');
+  g.drawImage(v,0,0,w,h);vz.snapCanvas=c}
+function finishPhoto(){const c=vz.snapCanvas;if(!c) return null;const g=c.getContext('2d'),w=c.width,h=c.height;
+  // la croix est à 42 % de la hauteur de l'écran ; approximation sur l'image
+  const cx=w/2,cy=h*0.42;g.strokeStyle='#ff3b3b';g.lineWidth=3;g.beginPath();g.moveTo(cx-24,cy);g.lineTo(cx+24,cy);g.moveTo(cx,cy-24);g.lineTo(cx,cy+24);g.stroke();
+  g.fillStyle='#000a';g.fillRect(0,h-40,w,40);g.fillStyle='#fff';g.font='bold 20px system-ui';
+  const t=OT[$('vzType').value];g.fillText(`${t.e} ${t.n} — h ≈ ${vz.h.toFixed(1)} m à ${parseFloat($('vzD').value).toFixed(1)} m`,10,h-13);
+  return c.toDataURL('image/jpeg',0.7)}
+$('vzOk').onclick=()=>{const ph=finishPhoto();const t=$('vzType').value,d=parseFloat($('vzD').value);
+  if(vz.obs){vz.obs.h=+vz.h.toFixed(1);vz.obs.t=t;if(ph) vz.obs.photo=ph;if(isNaN(vz.obs.x)) vz.obs.x=d;if(vz.obs.m) vz.obs.m.setIcon(icon(OT[t].e));renderObs();compute()}
+  else addObst({t,x:d,h:+vz.h.toFixed(1),photo:ph,src:'visée'});
+  closeVisee()};
+
+// ---------- Lignes électriques (IGN BD TOPO + Enedis open data) ----------
+const LINES={layer:L.layerGroup().addTo(map),items:[],near:[],key:null};
+async function loadLines(){
+  if(!S.ladder) return;const c=S.ladder,key=c.lat.toFixed(4)+','+c.lng.toFixed(4);if(key===LINES.key) return;LINES.key=key;
+  LINES.layer.clearLayers();LINES.items=[];$('lineInfo').textContent='Recherche des lignes électriques autour de l\'échelle…';
+  const R=80,d=R/111320,dl=d/Math.cos(c.lat*Math.PI/180),bb=[c.lat-d,c.lng-dl,c.lat+d,c.lng+dl].join(',');
+  const jobs=[];
+  // IGN : lignes HTB
+  jobs.push(fetch(`https://data.geopf.fr/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=BDTOPO_V3:ligne_electrique&OUTPUTFORMAT=application/json&SRSNAME=EPSG:4326&COUNT=100&BBOX=${bb},urn:ogc:def:crs:EPSG::4326`)
+    .then(r=>r.json()).then(j=>(j.features||[]).forEach(f=>pushLine(f.geometry,'HTB',(f.properties||{}).voltage||'HTB','IGN'))).catch(()=>{}));
+  // Enedis : HTA et BT aériennes
+  for(const [ds,t] of [['reseau-hta','HTA'],['reseau-bt','BT']]){
+    const w=encodeURIComponent(`within_distance(geo_shape, geom'POINT(${c.lng} ${c.lat})', ${R}m)`);
+    jobs.push((async()=>{for(const host of ['https://opendata.enedis.fr','https://data.enedis.fr']){
+      try{const r=await fetch(`${host}/api/explore/v2.1/catalog/datasets/${ds}/records?where=${w}&limit=100`);if(!r.ok) continue;
+        const j=await r.json();(j.results||[]).forEach(rec=>{const g=findGeom(rec);if(g) pushLine(g,t,t,'Enedis')});return}catch(e){}}})());
+  }
+  await Promise.all(jobs);
+  const n={HTB:0,HTA:0,BT:0};LINES.items.forEach(l=>n[l.t]++);
+  $('lineInfo').textContent=LINES.items.length?`Lignes aériennes trouvées dans un rayon de ${R} m : ${n.HTB} HTB, ${n.HTA} HTA, ${n.BT} BT (IGN / Enedis, à confirmer visuellement).`:`Aucune ligne aérienne connue dans un rayon de ${R} m (IGN / Enedis) — vérifiez quand même visuellement.`;
+  linesCheck();compute();
+}
+function findGeom(o){if(!o||typeof o!=='object') return null;if(o.type&&o.coordinates) return o;if(o.geometry&&o.geometry.coordinates) return o.geometry;
+  for(const k in o){const g=findGeom(o[k]);if(g&&/Line/.test(g.type)) return g}return null}
+function pushLine(g,t,label,src){if(!g) return;const parts=g.type==='LineString'?[g.coordinates]:g.type==='MultiLineString'?g.coordinates:[];
+  const col={HTB:'#7b2cbf',HTA:'#e8590c',BT:'#f2c200'}[t];
+  parts.forEach(pt=>{const ll=pt.map(fixLL).map(x=>L.latLng(x[0],x[1]));LINES.items.push({t,ll,label,src});
+    L.polyline(ll,{color:col,weight:4,opacity:.9,dashArray:t==='BT'?'6 5':null}).bindPopup(`⚡ ${t} (${label}) — source ${src}`).addTo(LINES.layer)})}
+function segInter(p1,p2,p3,p4){const d=(p2.x-p1.x)*(p4.y-p3.y)-(p2.y-p1.y)*(p4.x-p3.x);if(Math.abs(d)<1e-9) return null;
+  const t=((p3.x-p1.x)*(p4.y-p3.y)-(p3.y-p1.y)*(p4.x-p3.x))/d,u=((p3.x-p1.x)*(p2.y-p1.y)-(p3.y-p1.y)*(p2.x-p1.x))/d;
+  return t>=0&&t<=1&&u>=0&&u<=1?t:null}
+function segDist(p,a,b){const vx=b.x-a.x,vy=b.y-a.y,l=vx*vx+vy*vy;let t=l?((p.x-a.x)*vx+(p.y-a.y)*vy)/l:0;t=Math.max(0,Math.min(1,t));return Math.hypot(p.x-a.x-t*vx,p.y-a.y-t*vy)}
+function linesCheck(){
+  LINES.near=[];if(!S.ladder||!S.target||!LINES.items.length) return;
+  const c=map.options.crs,A=c.project(S.ladder),B=c.project(S.target),D=map.distance(S.ladder,S.target),k=D/(Math.hypot(B.x-A.x,B.y-A.y)||1);
+  // retirer les obstacles auto précédents
+  for(let i=OBS.length-1;i>=0;i--) if(OBS[i].src==='auto'&&OBS[i].h==null){if(OBS[i].m)map.removeLayer(OBS[i].m);OBS.splice(i,1)}
+  LINES.items.forEach(l=>{const P_=l.ll.map(x=>c.project(x));let cross=null,near=Infinity;
+    for(let i=0;i<P_.length-1;i++){const t=segInter(A,B,P_[i],P_[i+1]);if(t!=null) cross=cross==null?t:Math.min(cross,t);
+      near=Math.min(near,segDist(P_[i],A,B)*k,segDist(P_[i+1],A,B)*k,segDist(A,P_[i],P_[i+1])*k,segDist(B,P_[i],P_[i+1])*k)}
+    if(cross!=null){const x=cross*D;
+      if(!OBS.some(o=>o.t===l.t&&Math.abs(o.x-x)<1.5)){const ll=L.latLng(S.ladder.lat+(S.target.lat-S.ladder.lat)*cross,S.ladder.lng+(S.target.lng-S.ladder.lng)*cross);
+        const o={id:++obsSeq,t:l.t,x,h:null,src:'auto',ll};OBS.push(o);o.m=L.marker(ll,{icon:icon('⚡')}).addTo(map)}}
+    else if(near<OT[l.t].g+3) LINES.near.push(`⚡ Ligne ${l.t} à ≈ ${near.toFixed(1)} m de l'axe échelle–cible (garde ${OT[l.t].g} m) : surveiller le pivotement.`)});
+  renderObs();
+}
 // ---------- Modèle géométrique (obstacles, vent, lance — estimation) ----------
 function solve(R,H,obst,lim){
   let best=null;
@@ -372,13 +527,15 @@ function solve(R,H,obst,lim){
     const L_=Math.hypot(ax,ay-P.hp),th=Math.atan2(ay-P.hp,ax)*180/Math.PI,bend=th-phi;
     if(L_<P.Lmin||L_>P.Lmax||th<P.tmin||th>Math.min(P.tmax,lim.tmax)||bend<-0.01||bend>P.bmax) continue;
     if(L_+P.la>lim.Ltot+0.01) continue;
-    let clear=Infinity;
-    if(obst&&obst.x<R){const segs=[[0,P.hp,ax,ay],[ax,ay,R,H]];
+    let worst=Infinity,clear=Infinity,crit=null;
+    for(const o of (obst||[])){ if(o.x>=R) continue;
+      const segs=[[0,P.hp,ax,ay],[ax,ay,R,H]];let c=Infinity;
       for(const[x1,y1,x2,y2]of segs){const lo=Math.min(x1,x2),hi=Math.max(x1,x2);
-        if(obst.x>=lo&&obst.x<=hi&&hi>lo){const y=y1+(y2-y1)*(obst.x-x1)/(x2-x1);clear=Math.min(clear,y-obst.h)}}}
-    const ok=!obst||clear>=obst.garde;
-    const score=(ok?0:1000)+bend*0.2-(obst?Math.min(clear,5):0);
-    if(!best||score<best.score) best={th,phi,bend,L:L_,ax,ay,clear,ok,score};
+        if(o.x>=lo&&o.x<=hi&&hi>lo){const y=y1+(y2-y1)*(o.x-x1)/(x2-x1);c=Math.min(c,o.el?Math.abs(y-o.h):y-o.h)}}
+      if(c-o.garde<worst){worst=c-o.garde;clear=c;crit=o}}
+    const ok=worst>=0;
+    const score=(ok?0:1000)+bend*0.2-Math.min(worst,5);
+    if(!best||score<best.score) best={th,phi,bend,L:L_,ax,ay,clear,crit,ok,score};
   }
   return best;
 }
@@ -523,21 +680,21 @@ function compute(){
   if(ch==='A') add('Appui (FR 9) : plateforme en appui sur une surface résistante (attention aux rambardes), 2 personnes par plan.','warn');
 
   // contraintes complémentaires
-  const ot=$('oType').value,garde=parseFloat(ot),elec=ot.length>1;
-  const od=parseFloat($('oDist').value),oh=parseFloat($('oH').value);
-  const obst=(!isNaN(od)&&!isNaN(oh))?{x:od,h:oh,garde}:null;
+  const obsOK=OBS.filter(o=>o.h!=null&&!isNaN(o.x));
+  const obst=obsOK.length?obsOK.map(o=>({x:o.x,h:o.h,garde:OT[o.t].g,el:!!OT[o.t].el,o})):null;
+  OBS.filter(o=>o.h==null).forEach(o=>add(`${OT[o.t].e} ${OT[o.t].n} à ${o.x.toFixed(1)} m : hauteur à mesurer (📷 visée).`,'warn'));
   let Ltot=P.Lmax+P.la,tmax=P.tmax,fv=1;
   if(vent>45){fv=Math.max(0,1-(vent-45)/35);Ltot*=fv}
   if(mis==='lance'){Ltot=Math.min(Ltot,P.lLen);tmax=Math.min(tmax,P.lAng)}
   let sol=null;
   if(!isNaN(D)&&(obst||vent>45||mis==='lance')){
     sol=solve(D,H,obst,{Ltot,tmax});
-    const nomO=elec?'Ligne électrique':'Obstacle';
     if(!sol) add(`Estimation géométrique : position nacelle non atteignable avec ${mis==='lance'?`la lance (≤ ${P.lLen} m, ≤ ${P.lAng}°)`:''}${vent>45?` longueur réduite par le vent (${Ltot.toFixed(1)} m)`:''}.`,'ko');
-    else if(obst&&!sol.ok) add(`${nomO} à ${obst.x.toFixed(1)} m (h ${obst.h.toFixed(1)} m) : garde de ${garde} m non tenue, même en articulant (estimation).`,'ko');
-    else if(obst) add(`${nomO} franchi avec ≈ ${Math.min(sol.clear,99).toFixed(1)} m de garde (mini ${garde} m), articulation ${sol.bend<1?'non utilisée':'≈ '+sol.bend.toFixed(0)+'°'} (estimation).`);
+    else if(obst&&!sol.ok){const o=sol.crit.o;add(`${OT[o.t].e} ${OT[o.t].n} à ${o.x.toFixed(1)} m (h ${o.h.toFixed(1)} m) : garde de ${OT[o.t].g} m non tenue, même en articulant (estimation).`,'ko')}
+    else if(obst) add(`Obstacles : garde mini ≈ ${Math.min(sol.clear,99).toFixed(1)} m${sol.crit?' ('+OT[sol.crit.o.t].n.toLowerCase()+')':''}, articulation ${sol.bend<1?'non utilisée':'≈ '+sol.bend.toFixed(0)+'°'} (estimation).`);
   }
-  if(elec&&obst) add('Ligne aérienne : Detect Line / Sky Nacelle ne remplacent pas la vigilance (FR 4-5) ; pas de détection du courant continu (tram, SNCF).','warn');
+  if(OBS.some(o=>OT[o.t].el)) add('Ligne aérienne : Detect Line / Sky Nacelle ne remplacent pas la vigilance (FR 4-5) ; pas de détection du courant continu (tram, SNCF).','warn');
+  (LINES.near||[]).forEach(t=>add(t,'warn'));
 
   const dd=devDeg();
   if(dd!=null){
@@ -586,7 +743,7 @@ function drawSide(res,D){
 }
 
 $('btnProp').onclick=proposer;
-renderParams();renderDiag();autoHeight();showTerrain();compute();
+renderParams();renderDiag();renderObs();autoHeight();showTerrain();compute();
 </script>
 </body>
 </html>
