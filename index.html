@@ -85,6 +85,11 @@ td,th{border-bottom:1px solid var(--line);padding:4px;text-align:center}
     <label>Dénivelé sol cible – sol échelle (m)<input id="deniv" type="number" step="0.1" value="0"></label>
     <label>Distance axe tourelle → aplomb cible (m)<input id="dist" type="number" step="0.1"></label>
   </div>
+  <div class="row" style="margin-top:8px">
+    <button id="fVisee" class="primary">📷 Mesurer la façade</button>
+    <img id="fPhoto" style="display:none;width:52px;height:52px;object-fit:cover;border-radius:6px;cursor:pointer">
+    <span class="hint" id="fInfo">Visez le pied du mur puis la gouttière ou la fenêtre visée.</span>
+  </div>
   <div class="grid" style="margin-top:8px">
     <label>Personnes en plateforme
       <select id="charge">
@@ -432,12 +437,15 @@ function onOri(e){if(e.beta==null) return;
   if(!portrait){$('vzAng').textContent='Passez en mode portrait';return}
   vz.buf.push(e.beta-90);if(vz.buf.length>12) vz.buf.shift();
   const a=curAngle();$('vzAng').textContent=`Angle : ${a>=0?'+':''}${a.toFixed(1)}°`}
-async function openVisee(obs){
-  vz={stream:null,buf:[],foot:null,top:null,obs:obs||null,photo:null,h:null,dAuto:false,dMsg:''};
+async function openVisee(obs,mode){
+  vz={mode:mode||'obs',stream:null,buf:[],foot:null,top:null,obs:obs||null,photo:null,h:null,dAuto:false,dMsg:''};
   $('vzType').value=obs?obs.t:$('oType').value;
   $('vzD').value=obs&&!isNaN(obs.x)?obs.x.toFixed(1):($('oDist').value||'');
+  const fac=vz.mode==='facade';$('vzType').parentElement.style.display=fac?'none':'';
+  if(fac){const d=parseFloat($('dist').value);$('vzD').value=isNaN(d)?'':Math.max(0,d-P.marge).toFixed(1)}
   $('vzRes').textContent='';$('vzOk').disabled=true;$('vzFoot').textContent='1 · Viser le pied';$('vzTop').textContent='2 · Viser le sommet';
   $('vzMsg').textContent='Tenez le téléphone verticalement. Visez le pied (la distance est alors estimée si vous la laissez vide), puis le sommet ou le câble.';
+  if(fac) $('vzMsg').textContent='Façade : visez le PIED DU MUR, puis la GOUTTIÈRE ou l\'appui de la fenêtre visée. Distance = votre distance horizontale au mur (vide = estimée par la visée du pied).';
   $('vz').style.display='block';
   try{ if(typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission){const r=await DeviceOrientationEvent.requestPermission();if(r!=='granted') throw new Error('inclinaison refusée')}
     window.addEventListener('deviceorientation',onOri);
@@ -448,6 +456,8 @@ async function openVisee(obs){
 function closeVisee(){window.removeEventListener('deviceorientation',onOri);if(vz.stream) vz.stream.getTracks().forEach(t=>t.stop());$('vz').style.display='none'}
 $('vzClose').onclick=closeVisee;
 $('oVisee').onclick=()=>openVisee(null);
+$('fVisee').onclick=()=>openVisee(null,'facade');
+$('fPhoto').onclick=()=>{$('phImg').src=$('fPhoto').src;$('phView').style.display='block'};
 function vzCalc(){
   const d=parseFloat($('vzD').value);if(isNaN(d)||d<=0){$('vzMsg').textContent='Indiquez votre distance horizontale à l\'obstacle (m).';return null}
   if(vz.top==null) return null;
@@ -471,9 +481,12 @@ function finishPhoto(){const c=vz.snapCanvas;if(!c) return null;const g=c.getCon
   // la croix est à 42 % de la hauteur de l'écran ; approximation sur l'image
   const cx=w/2,cy=h*0.42;g.strokeStyle='#ff3b3b';g.lineWidth=3;g.beginPath();g.moveTo(cx-24,cy);g.lineTo(cx+24,cy);g.moveTo(cx,cy-24);g.lineTo(cx,cy+24);g.stroke();
   g.fillStyle='#000a';g.fillRect(0,h-40,w,40);g.fillStyle='#fff';g.font='bold 20px system-ui';
-  const t=OT[$('vzType').value];g.fillText(`${t.e} ${t.n} — h ≈ ${vz.h.toFixed(1)} m à ${parseFloat($('vzD').value).toFixed(1)} m`,10,h-13);
+  const t=vz.mode==='facade'?{e:'🏢',n:'Façade'}:OT[$('vzType').value];g.fillText(`${t.e} ${t.n} — h ≈ ${vz.h.toFixed(1)} m à ${parseFloat($('vzD').value).toFixed(1)} m`,10,h-13);
   return c.toDataURL('image/jpeg',0.7)}
 $('vzOk').onclick=()=>{const ph=finishPhoto();const t=$('vzType').value,d=parseFloat($('vzD').value);
+  if(vz.mode==='facade'){const h=+vz.h.toFixed(1);$('cibleType').value='manu';$('lEtage').style.display='none';$('hCible').value=h;manual.hCible=true;
+    if(ph){$('fPhoto').src=ph;$('fPhoto').style.display=''}
+    $('fInfo').textContent=`Façade mesurée : ${h} m${vz.foot==null?' (sans visée du pied : yeux à '+P.eyeH+' m)':''}.`;closeVisee();compute();return}
   if(vz.obs){vz.obs.h=+vz.h.toFixed(1);vz.obs.t=t;if(ph) vz.obs.photo=ph;if(isNaN(vz.obs.x)) vz.obs.x=d;if(vz.obs.m) vz.obs.m.setIcon(icon(OT[t].e));renderObs();compute()}
   else addObst({t,x:d,h:+vz.h.toFixed(1),photo:ph,src:'visée'});
   closeVisee()};
